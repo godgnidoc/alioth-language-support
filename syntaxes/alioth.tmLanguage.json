@@ -1,20 +1,245 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "Alioth",
+  "name": "alioth",
+  "fileTypes": [
+    "alioth",
+    ".alioth"
+  ],
   "patterns": [
     {
-      "include": "#keywords"
+      "include": "#comments"
     },
     {
-      "include": "#strings"
+      "include": "#module"
+    },
+    {
+      "include": "#keywords"
     }
   ],
   "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.alioth",
+          "contentName": "comment.block.alioth",
+          "begin": "/\\*",
+          "end": "\\*/"
+        },
+        {
+          "name": "comment.line.alioth",
+          "match": "//.*"
+        }
+      ]
+    },
+    "module": {
+      "patterns": [
+        {
+          "begin": "(module)\\s+((?:\\w|_)+)\\s*(:)?",
+          "end": "(?=class\\b|method\\b|operator\\b|enum\\b|;)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.module.alioth"
+            },
+            "2": {
+              "name": "entity.name.module.alioth"
+            },
+            "3": {
+              "name": "keyword.colon.alioth"
+            }
+          },
+          "endCaptures": {
+            "1": {
+              "name": "keyword.definition.alioth"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#dependencies"
+            }
+          ]
+        },
+        {
+          "include": "#implementations"
+        },
+        {
+          "include": "#definitions"
+        }
+      ]
+    },
+    "dependencies": {
+      "patterns": [
+        {
+          "match": "(as)\\s+(?:(this module)|((?:\\w|_)+))",
+          "captures": {
+            "1": {
+              "name": "keyword.as.alioth"
+            },
+            "2": {
+              "name": "constant.language.alioth"
+            },
+            "3": {
+              "name": "entity.name.alias.alioth"
+            }
+          }
+        },
+        {
+          "match": "(@)\\s*((?:\\w|_)+|\\\"[^\"]+\\\"|\\'[^']+\\')",
+          "captures": {
+            "1": {
+              "name": "keyword.at.alioth"
+            },
+            "2": {
+              "name": "entity.name.app.alioth"
+            }
+          }
+        },
+        {
+          "match": "(?:\\w|_)+",
+          "name": "entity.name.dependency.alioth"
+        }
+      ]
+    },
+    "definitions": {
+      "patterns": [
+        {
+          "match": "(method)\\s+((?:(?:meta|const|public|private|entry)\\s+)+)?((?:\\w|_)+)",
+          "captures": {
+            "1": {
+              "name": "keyword.method.alioth"
+            },
+            "2": {
+              "name": "storage.modifier.alioth"
+            },
+            "3": {
+              "name": "entity.name.function.alioth"
+            }
+          }
+        },
+        {
+          "begin": "(class)\\s+(?'a'(?:(?:public|private|\\$)\\s+)+)?((?:\\w|_)+).*?(?=\\{)",
+          "end": "\\}",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.class.alioth"
+            },
+            "2": {
+              "name": "storage.modifier.alioth"
+            },
+            "3": {
+              "name": "entity.name.function.alioth"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#definitions"
+            },
+            {
+              "include": "#operators"
+            }
+          ]
+        },
+        {
+          "match": "((?:var|ptr|ref|rel)\\s+)((?:(?:public|private|meta|const)\\s+)+)?((?:\\w|_)+)",
+          "captures": {
+            "1": {
+              "name": "support.type.alioth"
+            },
+            "2": {
+              "name": "storage.modifier.alioth"
+            },
+            "3": {
+              "name": "entity.name.function.alioth"
+            }
+          }
+        }
+      ]
+    },
+    "implementations": {
+      "patterns": [
+        {
+          "begin": "(method)\\s+((?:(?:const|\\$)\\s+)+)?((?:\\w|_|::)+).*?\\{",
+          "end": "(\\})",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.method.alioth"
+            },
+            "2": {
+              "name": "storage.modifier.alioth"
+            },
+            "3": {
+              "name": "entity.name.function.alioth"
+            }
+          },
+          "endCaptures": {
+            "1": {
+              "name": "keyword.operator.scope.alioth"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#keywords"
+            },
+            {
+              "include": "#strings"
+            }
+          ]
+        }
+      ]
+    },
     "keywords": {
       "patterns": [
         {
           "name": "keyword.control.alioth",
-          "match": "\\b(if|while|for|return)\\b"
+          "match": "\\b(if|else|break|continue|loop|return|assume|otherwise|switch|case|default)\\b"
+        },
+        {
+          "name": "constant.numeric.real.alioth",
+          "match": "\\b[0-9]+(\\.[0-9]+)?(e[0-9]+)?\\b"
+        },
+        {
+          "name": "constant.numeric.binary.alioth",
+          "match": "\\b0b[01]+\\b"
+        },
+        {
+          "name": "constant.numeric.octal.alioth",
+          "match": "\\b0o[01234567]+\\b"
+        },
+        {
+          "name": "constant.numeric.hex.alioth",
+          "match": "\\b0x[0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.character.alioth",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "include": "#escapes"
+            }
+          ]
+        },
+        {
+          "name": "constant.language.alioth",
+          "match": "\\b(true|false|null|nil|\\.\\.\\.)\\b"
+        },
+        {
+          "name": "storage.type.alioth",
+          "match": "\\**(int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|bool)\\b"
+        },
+        {
+          "name": "storage.modifier.alioth",
+          "match": "\\b(const|private|public|entry|meta)\\b"
+        },
+        {
+          "name": "support.type.alioth",
+          "match": "\\b(var|ptr|ref|rel)\\b"
+        },
+        {
+          "name": "variable.language.alioth",
+          "match": "\\b(this)\\b"
         }
       ]
     },
@@ -24,8 +249,47 @@
       "end": "\"",
       "patterns": [
         {
+          "include": "#escapes"
+        }
+      ]
+    },
+    "escapes": {
+      "patterns": [
+        {
           "name": "constant.character.escape.alioth",
-          "match": "\\\\."
+          "match": "\\\\(x\\h\\h|.)"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.alioth",
+          "match": "(\\$|\\+|-|\\*|\\/|\\%|\\.|=|&|\\||\\~|\\^)"
+        },
+        {
+          "name": "keyword.operator.alioth",
+          "match": "\\b(and|or|not)\\b"
+        },
+        {
+          "name": "keyword.operator.alioth",
+          "match": "\\b(as)\\b"
+        },
+        {
+          "name": "keyword.scope.alioth",
+          "match": "::"
+        },
+        {
+          "name": "keyword.member.alioth",
+          "match": "\\."
+        },
+        {
+          "name": "storage.type.alioth",
+          "match": "method|operator|class|enum"
+        },
+        {
+          "name": "keyword.bondory.alioth",
+          "match": "\\{|\\}|\\(|\\)|\\[|\\]"
         }
       ]
     }
