@@ -1,6 +1,6 @@
-# alioth-language-support README
+# alioth-language-support
 
-This is the README for your extension "alioth-language-support". After writing up a brief description, we recommend including the following sections.
+This extension is under developing.
 
 ## Features
 

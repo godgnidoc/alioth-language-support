@@ -2,6 +2,8 @@
     "name": "alioth-language-support",
     "displayName": "Alioth Language Support",
     "description": "The language support for the Alioth programming language.",
+    "repository": {"type": "git","url": "http://dn-ezr.cn:3000"},
+    "license": "MIT",
     "version": "0.0.1",
     "engines": {
         "vscode": "^1.34.0"
@@ -10,16 +12,28 @@
         "Programming Languages"
     ],
     "contributes": {
-        "languages": [{
-            "id": "alioth",
-            "aliases": ["Alioth", "alioth"],
-            "extensions": [".alioth"],
-            "configuration": "./language-configuration.json"
-        }],
-        "grammars": [{
-            "language": "alioth",
-            "scopeName": "source.alioth",
-            "path": "./syntaxes/alioth.tmLanguage.json"
-        }]
+        "languages": [
+            {
+                "id": "alioth",
+                "aliases": [
+                    "Alioth",
+                    "alioth"
+                ],
+                "extensions": [
+                    ".alioth"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "alioth",
+                "scopeName": "source.alioth",
+                "path": "./syntaxes/alioth.tmLanguage.json"
+            }
+        ]
+    },
+    "devDependencies": {
+        "js-yaml": "^3.13.1"
     }
 }
