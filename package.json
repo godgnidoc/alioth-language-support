@@ -83,6 +83,6 @@
     },
     "dependencies": {
         "vscode-languageclient": "^4.1.4",
-        "vscode-languageserver": "^4.1.4"
+        "vscode-languageserver": "^4.1.3"
     }
 }
