@@ -17,3 +17,7 @@ All features currently supported are newly added.
 ### Fixed
 
 Add dependencies to package.json
+
+## [0.0.5] - 2019-05-20
+
+Fix bug where dependencies where not taken.
