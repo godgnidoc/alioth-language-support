@@ -1,6 +1,13 @@
 {
     "name": "alioth-language-support",
     "displayName": "Alioth Language Support",
+    "icon": "icon/icon.png",
+    "author": {
+        "email": "stinger121@live.com",
+        "name": "GodGnidoc",
+        "url": "https://dn-ezr.cn"
+    },
+    "publisher": "GodGnidoc",
     "description": "The language support for the Alioth programming language.",
     "repository": {
         "type": "git",
