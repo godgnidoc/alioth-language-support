@@ -8,7 +8,6 @@ import {
 	TextDocuments,
 	TextDocument,
 	Diagnostic,
-	DiagnosticSeverity,
 	ProposedFeatures,
 	InitializeParams,
 	DidChangeConfigurationNotification,
@@ -16,14 +15,12 @@ import {
 	CompletionItemKind,
 	TextDocumentPositionParams,
 	Position,
-	TextDocumentChangeEvent,
-	ConnectionStrategy,
-	VersionedTextDocumentIdentifier
+	TextDocumentChangeEvent
 } from 'vscode-languageserver';
-import { exec, spawn } from 'child_process';
-import { isArray, isObject, isUndefined } from 'util';
 import * as path from 'path';
 import Uri from "vscode-uri";
+import { spawn } from 'child_process';
+import { isObject, isUndefined } from 'util';
 
 // Create a connection for the server. The connection uses Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -46,8 +43,8 @@ connection.onInitialize((params: InitializeParams) => {
 	hasWorkspaceFolderCapability = !!(capabilities.workspace && !!capabilities.workspace.workspaceFolders);
 	hasDiagnosticRelatedInformationCapability =
 		!!(capabilities.textDocument &&
-		capabilities.textDocument.publishDiagnostics &&
-		capabilities.textDocument.publishDiagnostics.relatedInformation);
+			capabilities.textDocument.publishDiagnostics &&
+			capabilities.textDocument.publishDiagnostics.relatedInformation);
 
 	return {
 		capabilities: {
@@ -73,6 +70,7 @@ connection.onInitialized(() => {
 			connection.console.log('Workspace folder change event received.');
 		});
 	}
+	connection.console.info("Alioth Language Server started.");
 });
 
 // The example settings
@@ -129,60 +127,60 @@ documents.onDidClose(e => {
 // documents.onDidSave(validateDocuments);
 documents.onDidChangeContent(validateDocuments);
 
-let diagnosticsMap : {[key:string]: Diagnostic[] } = {};
+let diagnosticsMap: { [key: string]: Diagnostic[] } = {};
 
-function validateDocuments(change : TextDocumentChangeEvent) : void {
-	connection.workspace.getWorkspaceFolders().then(function(folders){
-		let proc = spawn("aliothc",["--semantic-check", "--ask-input", "--work", Uri.parse(folders[0].uri).fsPath] );
+function validateDocuments(change: TextDocumentChangeEvent): void {
+	connection.workspace.getWorkspaceFolders().then(function (folders) {
+		let proc = spawn("aliothc", ["--semantic-check", "--ask-input", "--work", Uri.parse(folders[0].uri).fsPath]);
 
-		proc.stdout.on("data", function( message ) {
+		proc.stdout.on("data", function (message) {
 			let msg = null;
 			try {
 				msg = JSON.parse(message);
-				if( !isObject(msg) ) {proc.stdin.write(JSON.stringify({}));proc.stdin.write("\n");return;}
+				if (!isObject(msg)) { proc.stdin.write(JSON.stringify({})); proc.stdin.write("\n"); return; }
 			} catch {
 				proc.stdin.write(JSON.stringify({}));
 				proc.stdin.write("\n");
 				return;
 			}
-			if( msg.cmd === "ask for input" ) {
-				let pat : string = msg.path;
-				if( !path.isAbsolute(pat) ) {pat = path.resolve(pat);}
+			if (msg.cmd === "ask for input") {
+				let pat: string = msg.path;
+				if (!path.isAbsolute(pat)) { pat = path.resolve(pat); }
 				let doc = documents.get(Uri.file(pat).toString());
-				if( isUndefined(doc) ) {proc.stdin.write(JSON.stringify({}));proc.stdin.write("\n");return;}
+				if (isUndefined(doc)) { proc.stdin.write(JSON.stringify({})); proc.stdin.write("\n"); return; }
 				proc.stdin.write(JSON.stringify(doc.getText()));
 				proc.stdin.write("\n");
-			} else if( msg.cmd === "diagnostic" ) {
+			} else if (msg.cmd === "diagnostic") {
 				logProcessor(msg.log);
 			}
 		});
 	});
 }
 
-function logProcessor( log : Array<any> ) {
-	for( let key in diagnosticsMap ) {diagnosticsMap[key] = [];}
+function logProcessor(log: Array<any>) {
+	for (let key in diagnosticsMap) { diagnosticsMap[key] = []; }
 	log.forEach(element => {
-		let diagnostics : Diagnostic[] = diagnosticsMap[element.pat];
-		if( diagnostics === undefined ) { diagnostics = diagnosticsMap[element.pat] = [];}
+		let diagnostics: Diagnostic[] = diagnosticsMap[element.pat];
+		if (diagnostics === undefined) { diagnostics = diagnosticsMap[element.pat] = []; }
 		let diagnostic: Diagnostic = {
 			severity: element.sev,
 			range: {
-				start: Position.create(element.begl-1,element.begc-1),
-				end: Position.create(element.endl-1,element.endc-1)
+				start: Position.create(element.begl - 1, element.begc - 1),
+				end: Position.create(element.endl - 1, element.endc - 1)
 			},
 			message: element.msg,
 			source: 'alioth'
 		};
-		
+
 		if (hasDiagnosticRelatedInformationCapability) {
 			diagnostic.relatedInformation = [];
-			element.sub.forEach(sub =>{
+			element.sub.forEach(sub => {
 				let subd = {
 					location: {
 						uri: path.resolve(sub.pat),
 						range: {
-							start: Position.create(sub.begl-1,sub.begc-1),
-							end: Position.create(sub.endl-1,sub.endc-1)
+							start: Position.create(sub.begl - 1, sub.begc - 1),
+							end: Position.create(sub.endl - 1, sub.endc - 1)
 						}
 					},
 					message: sub.msg
@@ -194,7 +192,7 @@ function logProcessor( log : Array<any> ) {
 	});
 
 	// Send the computed diagnostics to VSCode.
-	for( let key in diagnosticsMap ) {
+	for (let key in diagnosticsMap) {
 		connection.sendDiagnostics({ uri: path.resolve(key), diagnostics: diagnosticsMap[key] });
 	}
 }

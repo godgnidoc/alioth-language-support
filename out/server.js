@@ -5,10 +5,10 @@
  * ------------------------------------------------------------------------------------------ */
 Object.defineProperty(exports, "__esModule", { value: true });
 const vscode_languageserver_1 = require("vscode-languageserver");
-const child_process_1 = require("child_process");
-const util_1 = require("util");
 const path = require("path");
 const vscode_uri_1 = require("vscode-uri");
+const child_process_1 = require("child_process");
+const util_1 = require("util");
 // Create a connection for the server. The connection uses Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
 let connection = vscode_languageserver_1.createConnection(vscode_languageserver_1.ProposedFeatures.all);
@@ -48,6 +48,7 @@ connection.onInitialized(() => {
             connection.console.log('Workspace folder change event received.');
         });
     }
+    connection.console.info("Alioth Language Server started.");
 });
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
 // Please note that this is not the case when using this server with the client provided in this example

@@ -40,6 +40,10 @@ There's no need to configure this extension right now.
 
 This is the first release.
 
+### 0.0.2
+
+Fix problem where dependencies were bad.
+
 ### 0.0.1
 
 Initial release of Alioth language support.
