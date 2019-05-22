@@ -158,7 +158,8 @@ function validateDocuments(change: TextDocumentChangeEvent): void {
 }
 
 function logProcessor(log: Array<any>) {
-	for (let key in diagnosticsMap) { diagnosticsMap[key] = []; }
+	for (let key in diagnosticsMap) {diagnosticsMap[key] = [];}
+
 	log.forEach(element => {
 		let diagnostics: Diagnostic[] = diagnosticsMap[element.pat];
 		if (diagnostics === undefined) { diagnostics = diagnosticsMap[element.pat] = []; }

@@ -40,6 +40,10 @@ There's no need to configure this extension right now.
 
 This is the first release.
 
+### 0.0.6
+
+Add some color support to new language standard.
+
 ### 0.0.5
 
 Fix bug where .vscodeignore cause bad dependencies.

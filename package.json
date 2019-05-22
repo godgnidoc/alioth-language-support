@@ -68,8 +68,8 @@
     },
     "scripts": {
         "vscode:prepublish": "npm run update-vscode && npm run compile",
-        "compile": "tsc -b",
-        "watch": "tsc -b -w",
+        "compile": "make && tsc -b",
+        "watch": "make && tsc -b -w",
         "update-vscode": "vscode-install",
         "postinstall": "vscode-install"
     },

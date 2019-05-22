@@ -6,6 +6,8 @@ fileTypes:
 patterns:
   - include: '#comments'
   - include: '#module'
+  - include: '#definitions'
+  - include: '#implementations'
   - include: '#keywords'
 repository:
   comments:
@@ -14,11 +16,21 @@ repository:
         contentName: comment.block.alioth
         begin: /\*
         end: \*/
+        patterns:
+          -
+            match: '(@)((?:\w|-|_)+)\s+([^:]+):'
+            captures:
+              '1':
+                name: keyword.comment.alioth
+              '2':
+                name: entity.name.section.alioth
+              '3':
+                name: entity.name.function.alioth
       - name: comment.line.alioth
         match: //.*
   module:
     patterns:
-      - begin: '(module)\s+((?:\w|_)+)\s*(:)?'
+      - begin: '(module)\s+((?:\w|_)+)(?:\s+(entry)\s+((?:\w|_)+))?\s*(:)?'
         end: (?=class\b|method\b|operator\b|enum\b|;)
         beginCaptures:
           '1':
@@ -26,17 +38,19 @@ repository:
           '2':
             name: entity.name.module.alioth
           '3':
+            name: keyword.entry.alioth
+          '4':
+            name: entity.name.function.alioth
+          '5':
             name: keyword.colon.alioth
         endCaptures:
           '1':
             name: keyword.definition.alioth
         patterns:
           - include: '#dependencies'
-      - include: '#implementations'
-      - include: '#definitions'
   dependencies:
     patterns:
-      - match: '(as)\s+(?:(this module)|((?:\w|_)+))'
+      - match: '(as)\s+(?:(this\s+module)|((?:\w|_)+))'
         captures:
           '1':
             name: keyword.as.alioth
@@ -54,14 +68,6 @@ repository:
         name: entity.name.dependency.alioth
   definitions:
     patterns:
-      - match: '(method)\s+((?:(?:meta|const|public|private|entry)\s+)+)?((?:\w|_)+)'
-        captures:
-          '1':
-            name: keyword.method.alioth
-          '2':
-            name: storage.modifier.alioth
-          '3':
-            name: entity.name.function.alioth
       - begin: '(class)\s+(?''a''(?:(?:public|private|\$)\s+)+)?((?:\w|_)+).*?(?=\{)'
         end: '\}'
         beginCaptures:
@@ -70,13 +76,24 @@ repository:
           '2':
             name: storage.modifier.alioth
           '3':
-            name: entity.name.function.alioth
+            name: entity.name.class.alioth
         patterns:
           - include: '#comments'
           - include: '#definitions'
+          - include: '#inter-definitions'
           - include: '#operators'
+  inter-definitions:
+    patterns:
+      - match: '(method)\s+((?:(?:meta|const|public|private|entry)\s+)+)?((?:\w|_)+)'
+        captures:
+          '1':
+            name: keyword.method.alioth
+          '2':
+            name: storage.modifier.alioth
+          '3':
+            name: entity.name.function.alioth
       - match: >-
-          ((?:var|ptr|ref|rel)\s+)((?:(?:public|private|meta|const)\s+)+)?((?:\w|_)+)
+          ((?:obj|ptr|ref|rel)\s+)((?:(?:public|private|meta|const)\s+)+)?((?:\w|_)+)
         captures:
           '1':
             name: support.type.alioth
@@ -86,13 +103,13 @@ repository:
             name: entity.name.function.alioth
   implementations:
     patterns:
-      - begin: '(method)\s+((?:(?:const|\$)\s+)+)?((?:\w|_|::)+).*?\{'
+      - begin: '(method)\s+((?:\w|_)+)\s+((?:\w|_)+)'
         end: '(\})'
         beginCaptures:
           '1':
             name: keyword.method.alioth
           '2':
-            name: storage.modifier.alioth
+            name: entity.name.class.alioth
           '3':
             name: entity.name.function.alioth
         endCaptures:
@@ -123,13 +140,23 @@ repository:
         match: \b(true|false|null|nil|\.\.\.)\b
       - name: storage.type.alioth
         match: >-
-          \**(int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|bool)\b
+          \**(int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|bool|void|(?:this\s+class))\b
       - name: storage.modifier.alioth
-        match: \b(const|private|public|entry|meta)\b
+        match: \b(const|private|public|meta)\b
       - name: support.type.alioth
-        match: \b(var|ptr|ref|rel)\b
+        match: \b(obj|ptr|ref|rel)\b
       - name: variable.language.alioth
         match: \b(this)\b
+      - match: ((?:\w|_)+)\s*\(
+        captures:
+          '1':
+            name: entity.name.function.alioth
+      - match: \.\s*((?:\w|_)+)
+        captures:
+          '1':
+            name: entity.name.class.alioth
+      - name: variable.name.alioth
+        match: (\w|_)+\s*\.?
   strings:
     name: string.quoted.double.alioth
     begin: '"'
