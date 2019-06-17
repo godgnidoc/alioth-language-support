@@ -151,13 +151,42 @@
               "include": "#operators"
             }
           ]
+        },
+        {
+          "begin": "(enum)\\s+((?:public\\s+|private\\s+)*)((?:\\w|_)+)\\s+({)",
+          "end": "(})",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.enum.alioth"
+            },
+            "2": {
+              "name": "storage.modifier.alioth"
+            },
+            "3": {
+              "name": "entity.name.class.alioth"
+            },
+            "4": {
+              "name": "keyword.opens.alioth"
+            }
+          },
+          "patterns": [
+            {
+              "match": "(\\w|_)+",
+              "name": "variable.language.alioth"
+            }
+          ],
+          "endCaptures": {
+            "1": {
+              "name": "keyword.opens.alioth"
+            }
+          }
         }
       ]
     },
     "inter-definitions": {
       "patterns": [
         {
-          "match": "(method)\\s+((?:(?:meta|const|public|private|entry)\\s+)+)?((?:\\w|_)+)",
+          "match": "(method)\\s+((?:(?:meta|const|public|private|)\\s+)+)?((?:\\w|_)+)",
           "captures": {
             "1": {
               "name": "keyword.method.alioth"
@@ -178,6 +207,31 @@
             },
             "2": {
               "name": "storage.modifier.alioth"
+            },
+            "3": {
+              "name": "entity.name.function.alioth"
+            }
+          }
+        },
+        {
+          "match": "(delete\\s+default\\s+operator)(.*)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.alioth"
+            },
+            "2": {
+              "name": "variable.language.alioth"
+            }
+          }
+        },
+        {
+          "match": "(operator)\\s+((?:(?:default|rev|ism|suffix|prefix)\\s+)*)([^\\(]+)",
+          "captures": {
+            "1": {
+              "name": "keyword.operator.alioth"
+            },
+            "2": {
+              "name": "storge.modifier.alioth"
             },
             "3": {
               "name": "entity.name.function.alioth"

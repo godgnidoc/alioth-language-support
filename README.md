@@ -12,7 +12,7 @@ This extension is under developing.
 
 - semantic check
   
-  this require you to have the Alioth compiler installed
+  this require you to have the Alioth compiler installed.
 
 ## Requirements
 
@@ -39,6 +39,10 @@ There's no need to configure this extension right now.
 ## Release Notes
 
 This is the first release.
+
+### 0.0.7
+
+Disable the disabled functions...
 
 ### 0.0.6
 
