@@ -3,12 +3,22 @@
  * Copyright (c) Microsoft Corporation. All rights reserved.
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+//import Uri from "vscode-uri";
 const vscode_languageserver_1 = require("vscode-languageserver");
 const path = require("path");
-const vscode_uri_1 = require("vscode-uri");
 const child_process_1 = require("child_process");
-const util_1 = require("util");
+const os = require("os");
+const fs = require("fs");
+const vscode_uri_1 = require("vscode-uri");
 // Create a connection for the server. The connection uses Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
 let connection = vscode_languageserver_1.createConnection(vscode_languageserver_1.ProposedFeatures.all);
@@ -31,7 +41,6 @@ connection.onInitialize((params) => {
     return {
         capabilities: {
             textDocumentSync: documents.syncKind,
-            // documentHighlightProvider : true,
             // Tell the client that the server supports code completion
             completionProvider: {
                 resolveProvider: true
@@ -39,7 +48,8 @@ connection.onInitialize((params) => {
         }
     };
 });
-connection.onInitialized(() => {
+connection.onInitialized(() => __awaiter(this, void 0, void 0, function* () {
+    initializeCompiler();
     if (hasConfigurationCapability) {
         // Register for all configuration changes.
         connection.client.register(vscode_languageserver_1.DidChangeConfigurationNotification.type, undefined);
@@ -50,7 +60,7 @@ connection.onInitialized(() => {
         });
     }
     connection.console.info("Alioth Language Server started.");
-});
+}));
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
 // Please note that this is not the case when using this server with the client provided in this example
 // but could happen with other clients.
@@ -92,86 +102,6 @@ documents.onDidClose(e => {
 // documents.onDidOpen(validateDocuments);
 // documents.onDidSave(validateDocuments);
 documents.onDidChangeContent(validateDocuments);
-let diagnosticsMap = {};
-function validateDocuments(change) {
-    connection.workspace.getWorkspaceFolders().then(function (folders) {
-        let proc = child_process_1.spawn("aliothc", ["--semantic-check", "--ask-input", "--work", vscode_uri_1.default.parse(folders[0].uri).fsPath]);
-        proc.stdout.on("data", function (message) {
-            let msg = null;
-            try {
-                msg = JSON.parse(message);
-                if (!util_1.isObject(msg)) {
-                    proc.stdin.write(JSON.stringify({}));
-                    proc.stdin.write("\n");
-                    return;
-                }
-            }
-            catch (_a) {
-                proc.stdin.write(JSON.stringify({}));
-                proc.stdin.write("\n");
-                return;
-            }
-            if (msg.cmd === "ask for input") {
-                let pat = msg.path;
-                if (!path.isAbsolute(pat)) {
-                    pat = path.resolve(pat);
-                }
-                let doc = documents.get(vscode_uri_1.default.file(pat).toString());
-                if (util_1.isUndefined(doc)) {
-                    proc.stdin.write(JSON.stringify({}));
-                    proc.stdin.write("\n");
-                    return;
-                }
-                proc.stdin.write(JSON.stringify(doc.getText()));
-                proc.stdin.write("\n");
-            }
-            else if (msg.cmd === "diagnostic") {
-                logProcessor(msg.log);
-            }
-        });
-    });
-}
-function logProcessor(log) {
-    for (let key in diagnosticsMap) {
-        diagnosticsMap[key] = [];
-    }
-    log.forEach(element => {
-        let diagnostics = diagnosticsMap[element.pat];
-        if (diagnostics === undefined) {
-            diagnostics = diagnosticsMap[element.pat] = [];
-        }
-        let diagnostic = {
-            severity: element.sev,
-            range: {
-                start: vscode_languageserver_1.Position.create(element.begl - 1, element.begc - 1),
-                end: vscode_languageserver_1.Position.create(element.endl - 1, element.endc - 1)
-            },
-            message: element.msg,
-            source: 'alioth'
-        };
-        if (hasDiagnosticRelatedInformationCapability) {
-            diagnostic.relatedInformation = [];
-            element.sub.forEach(sub => {
-                let subd = {
-                    location: {
-                        uri: path.resolve(sub.pat),
-                        range: {
-                            start: vscode_languageserver_1.Position.create(sub.begl - 1, sub.begc - 1),
-                            end: vscode_languageserver_1.Position.create(sub.endl - 1, sub.endc - 1)
-                        }
-                    },
-                    message: sub.msg
-                };
-                diagnostic.relatedInformation.push(subd);
-            });
-        }
-        diagnostics.push(diagnostic);
-    });
-    // Send the computed diagnostics to VSCode.
-    for (let key in diagnosticsMap) {
-        connection.sendDiagnostics({ uri: path.resolve(key), diagnostics: diagnosticsMap[key] });
-    }
-}
 connection.onDidChangeWatchedFiles(_change => {
     // Monitored files have change in VSCode
     connection.console.log('We received an file change event');
@@ -207,6 +137,198 @@ connection.onCompletionResolve((item) => {
     }
     return item;
 });
+// the connection to the compiler
+let compiler = undefined;
+function initializeCompiler() {
+    compiler = child_process_1.spawn("alioth", ["v:", "0", "---", "0/1"]);
+    compiler.stdout.on("data", onCompilerOutput);
+    compiler.on("close", (code, signal) => {
+        connection.console.log("Compiler exited:(" + code + "):" + signal);
+    });
+    connection.console.log("Compiler started in interactive mode");
+}
+function onCompilerOutput(message) {
+    let msg = null;
+    try {
+        msg = JSON.parse(message);
+        if (msg === null || typeof msg !== 'object') {
+            return;
+        }
+    }
+    catch (_a) {
+        return;
+    }
+    if (msg.action === "request") {
+        processRequest(msg);
+    }
+    else if (msg.action === "respond") {
+        processRespond(msg);
+    }
+}
+function processRequest(request) {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (request.title === "content") {
+            let uri = request.uri;
+            let doc = documents.get(uri);
+            if (doc === undefined) {
+                respondFailure(request);
+                return;
+            }
+            else {
+                respondContent(request.seq, doc.getText());
+            }
+        }
+        else if (request.title === "contents") {
+            let data = {};
+            let cur_time = os.uptime();
+            let dir_path = vscode_uri_1.default.parse(request.uri).fsPath;
+            let ents = fs.readdirSync(dir_path, { withFileTypes: true });
+            for (let ent of ents) {
+                let obj = {};
+                if (ent.isDirectory()) {
+                    obj["dir"] = true;
+                }
+                else {
+                    obj["dir"] = false;
+                    let file_path = path.join(dir_path, ent.name);
+                    let doc = documents.get(vscode_uri_1.default.file(file_path).toString());
+                    if (doc === undefined) {
+                        let st = fs.statSync(file_path);
+                        obj["size"] = st.size;
+                        obj["mtime"] = st.mtime.getTime();
+                    }
+                    else {
+                        obj["size"] = 1;
+                        obj["mtime"] = cur_time;
+                    }
+                }
+                data[ent.name] = obj;
+            }
+            respondContents(request.seq, data);
+        }
+        else {
+            return;
+        }
+    });
+}
+function processRespond(respond) {
+    if (respond.title === "diagnostics") {
+        if (Array.isArray(respond.diagnostics)) {
+            diagnosticsProcesser(respond.diagnostics);
+        }
+    }
+    else {
+        return;
+    }
+}
+function requestDiagnostics(targets = []) {
+    let pack = {
+        title: "diagnostics",
+        targets: targets
+    };
+    return sendRequest(pack);
+}
+function requestWorkspace(uri) {
+    let pack = {
+        title: "workspace",
+        uri: uri
+    };
+    return sendRequest(pack);
+}
+function respondContent(seq, data) {
+    let pack = {
+        title: "content",
+        status: 0,
+        data: data
+    };
+    sendRespond(seq, pack);
+}
+function respondContents(seq, data) {
+    let pack = {
+        title: "contents",
+        status: 0,
+        data: data
+    };
+    sendRespond(seq, pack);
+}
+function respondFailure(request) {
+    let pack = {
+        title: request.title,
+        status: 1
+    };
+    sendRespond(request.seq, pack);
+}
+let global_req = 1;
+function sendRequest(pack) {
+    pack.action = "request";
+    pack.seq = global_req++;
+    sendPackage(pack);
+    return pack.seq;
+}
+function sendRespond(seq, pack) {
+    pack.action = "respond";
+    pack.seq = seq;
+    sendPackage(pack);
+}
+function sendPackage(pack) {
+    pack.timestamp = os.uptime();
+    let str = JSON.stringify(pack) + "\n";
+    compiler.stdin.write(str, (e) => { });
+    // connection.console.log("Package sent to compiler: " + str );
+}
+let workspace_set = false;
+function validateDocuments(change) {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (!workspace_set) {
+            workspace_set = true;
+            let folders = yield connection.workspace.getWorkspaceFolders();
+            requestWorkspace(folders[0].uri);
+        }
+        requestDiagnostics();
+    });
+}
+let diagnosticsMap = {};
+function diagnosticsProcesser(log) {
+    for (let key in diagnosticsMap) {
+        diagnosticsMap[key] = [];
+    }
+    for (let element of log) {
+        let diagnostics = diagnosticsMap[element.prefix];
+        if (diagnostics === undefined) {
+            diagnostics = diagnosticsMap[element.prefix] = [];
+        }
+        let diagnostic = {
+            severity: element.severity,
+            range: {
+                start: vscode_languageserver_1.Position.create(element.begin_line - 1, element.begin_column - 1),
+                end: vscode_languageserver_1.Position.create(element.end_line - 1, element.end_column - 1)
+            },
+            message: element.message,
+            source: 'alioth'
+        };
+        if (hasDiagnosticRelatedInformationCapability) {
+            diagnostic.relatedInformation = [];
+            for (let sub of element.informations) {
+                let subd = {
+                    location: {
+                        uri: path.resolve(sub.prefix),
+                        range: {
+                            start: vscode_languageserver_1.Position.create(sub.begin_line - 1, sub.begin_column - 1),
+                            end: vscode_languageserver_1.Position.create(sub.end_line - 1, sub.end_column - 1)
+                        }
+                    },
+                    message: sub.message
+                };
+                diagnostic.relatedInformation.push(subd);
+            }
+        }
+        diagnostics.push(diagnostic);
+    }
+    // Send the computed diagnostics to VSCode.
+    for (let key in diagnosticsMap) {
+        connection.sendDiagnostics({ uri: key, diagnostics: diagnosticsMap[key] });
+    }
+}
 // Make the text document manager listen on the connection
 // for open, change and close text document events
 documents.listen(connection);

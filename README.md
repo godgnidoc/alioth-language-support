@@ -40,6 +40,10 @@ There's no need to configure this extension right now.
 
 This is the first release.
 
+### 0.0.8
+
+Enable support to the brand new compiler which is named `alioth`.
+
 ### 0.0.7
 
 Disable the disabled functions...

@@ -16,7 +16,7 @@ export function activate(context: vscode.ExtensionContext) {
 	let disposable = vscode.commands.registerCommand('alioth.initiateworkspace', () => {
 		var folders = vscode.workspace.workspaceFolders;
 		if( folders ) {
-			var cmd = "aliothc --init " + folders[0].uri.path;
+			var cmd = "alioth --init " + folders[0].uri.path;
 			exec(cmd);
 		}
 	});

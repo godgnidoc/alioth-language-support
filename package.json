@@ -11,7 +11,7 @@
     "description": "The language support for the Alioth programming language.",
     "repository": {
         "type": "git",
-        "url": "http://dn-ezr.cn:3000"
+        "url": "https://github.com/dn-ezr/alioth-language-support"
     },
     "license": "MIT",
     "version": "0.0.7",

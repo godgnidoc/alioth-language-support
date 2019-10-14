@@ -3,6 +3,7 @@
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
 
+//import Uri from "vscode-uri";
 import {
 	createConnection,
 	TextDocuments,
@@ -14,12 +15,14 @@ import {
 	CompletionItemKind,
 	TextDocumentPositionParams,
 	Position,
-	TextDocumentChangeEvent
+	TextDocumentChangeEvent,
+	DiagnosticSeverity
 } from 'vscode-languageserver';
 import * as path from 'path';
-import Uri from "vscode-uri";
-import { spawn } from 'child_process';
-import { isObject, isUndefined } from 'util';
+import { spawn, ChildProcess } from 'child_process';
+import os = require('os');
+import fs = require('fs');
+import URI from 'vscode-uri';
 
 // Create a connection for the server. The connection uses Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -35,16 +38,16 @@ let hasDiagnosticRelatedInformationCapability: boolean = false;
 
 connection.onInitialize((params: InitializeParams) => {
 	let capabilities = params.capabilities;
-
+	
 	// Does the client support the `workspace/configuration` request?
 	// If not, we will fall back using global settings
 	hasConfigurationCapability = !!(capabilities.workspace && !!capabilities.workspace.configuration);
 	hasWorkspaceFolderCapability = !!(capabilities.workspace && !!capabilities.workspace.workspaceFolders);
 	hasDiagnosticRelatedInformationCapability =
-		!!(capabilities.textDocument &&
-			capabilities.textDocument.publishDiagnostics &&
-			capabilities.textDocument.publishDiagnostics.relatedInformation);
-
+	!!(capabilities.textDocument &&
+		capabilities.textDocument.publishDiagnostics &&
+		capabilities.textDocument.publishDiagnostics.relatedInformation);
+		
 	return {
 		capabilities: {
 			textDocumentSync: documents.syncKind,
@@ -56,7 +59,10 @@ connection.onInitialize((params: InitializeParams) => {
 	};
 });
 
-connection.onInitialized(() => {
+connection.onInitialized(async () => {
+
+	initializeCompiler();
+
 	if (hasConfigurationCapability) {
 		// Register for all configuration changes.
 		connection.client.register(
@@ -126,77 +132,6 @@ documents.onDidClose(e => {
 // documents.onDidSave(validateDocuments);
 documents.onDidChangeContent(validateDocuments);
 
-let diagnosticsMap: { [key: string]: Diagnostic[] } = {};
-
-function validateDocuments(change: TextDocumentChangeEvent): void {
-	connection.workspace.getWorkspaceFolders().then(function (folders) {
-		let proc = spawn("aliothc", ["--semantic-check", "--ask-input", "--work", Uri.parse(folders[0].uri).fsPath]);
-
-		proc.stdout.on("data", function (message) {
-			let msg = null;
-			try {
-				msg = JSON.parse(message);
-				if (!isObject(msg)) { proc.stdin.write(JSON.stringify({})); proc.stdin.write("\n"); return; }
-			} catch {
-				proc.stdin.write(JSON.stringify({}));
-				proc.stdin.write("\n");
-				return;
-			}
-			if (msg.cmd === "ask for input") {
-				let pat: string = msg.path;
-				if (!path.isAbsolute(pat)) { pat = path.resolve(pat); }
-				let doc = documents.get(Uri.file(pat).toString());
-				if (isUndefined(doc)) { proc.stdin.write(JSON.stringify({})); proc.stdin.write("\n"); return; }
-				proc.stdin.write(JSON.stringify(doc.getText()));
-				proc.stdin.write("\n");
-			} else if (msg.cmd === "diagnostic") {
-				logProcessor(msg.log);
-			}
-		});
-	});
-}
-
-function logProcessor(log: Array<any>) {
-	for (let key in diagnosticsMap) {diagnosticsMap[key] = [];}
-
-	log.forEach(element => {
-		let diagnostics: Diagnostic[] = diagnosticsMap[element.pat];
-		if (diagnostics === undefined) { diagnostics = diagnosticsMap[element.pat] = []; }
-		let diagnostic: Diagnostic = {
-			severity: element.sev,
-			range: {
-				start: Position.create(element.begl - 1, element.begc - 1),
-				end: Position.create(element.endl - 1, element.endc - 1)
-			},
-			message: element.msg,
-			source: 'alioth'
-		};
-
-		if (hasDiagnosticRelatedInformationCapability) {
-			diagnostic.relatedInformation = [];
-			element.sub.forEach(sub => {
-				let subd = {
-					location: {
-						uri: path.resolve(sub.pat),
-						range: {
-							start: Position.create(sub.begl - 1, sub.begc - 1),
-							end: Position.create(sub.endl - 1, sub.endc - 1)
-						}
-					},
-					message: sub.msg
-				};
-				diagnostic.relatedInformation.push(subd);
-			});
-		}
-		diagnostics.push(diagnostic);
-	});
-
-	// Send the computed diagnostics to VSCode.
-	for (let key in diagnosticsMap) {
-		connection.sendDiagnostics({ uri: path.resolve(key), diagnostics: diagnosticsMap[key] });
-	}
-}
-
 connection.onDidChangeWatchedFiles(_change => {
 	// Monitored files have change in VSCode
 	connection.console.log('We received an file change event');
@@ -223,7 +158,6 @@ connection.onCompletion(
 	}
 );
 
-
 // This handler resolve additional information for the item selected in
 // the completion list.
 connection.onCompletionResolve(
@@ -238,6 +172,209 @@ connection.onCompletionResolve(
 		return item;
 	}
 );
+
+// the connection to the compiler
+let compiler : ChildProcess = undefined;
+function initializeCompiler() {
+	compiler = spawn("alioth", ["v:", "0", "---", "0/1"] );
+	compiler.stdout.on("data", onCompilerOutput);
+	compiler.on("close", (code: number, signal: string) => {
+		connection.console.log("Compiler exited:("+code+"):"+signal);
+	});
+	connection.console.log("Compiler started in interactive mode");
+}
+
+function onCompilerOutput( message ) {
+	let msg = null;
+	try {
+		msg = JSON.parse(message);
+		if (msg === null || typeof msg !== 'object') {return;}
+	} catch {return;}
+	
+	if( msg.action === "request" ) {
+		processRequest(msg);
+	} else if( msg.action === "respond" ) {
+		processRespond(msg);
+	}
+}
+
+async function processRequest( request ) {
+	if (request.title === "content") {
+		let uri: string = request.uri;
+		let doc = documents.get(uri);
+		if (doc === undefined) {
+			respondFailure(request);
+			return;
+		} else {
+			respondContent(request.seq, doc.getText());
+		}
+	} else if( request.title === "contents" ) {
+		let data = {};
+		let cur_time = os.uptime();
+		let dir_path = URI.parse(request.uri).fsPath;
+		let ents = fs.readdirSync(dir_path,{withFileTypes:true});
+		for( let ent of ents ) {
+			let obj = {};
+			if( ent.isDirectory() ) {
+				obj["dir"] = true;
+			} else {
+				obj["dir"] = false;
+				let file_path = path.join(dir_path,ent.name);
+				let doc = documents.get(URI.file(file_path).toString());
+				if( doc === undefined ) {
+					let st = fs.statSync(file_path);
+					obj["size"] = st.size;
+					obj["mtime"] = st.mtime.getTime();
+				} else {
+					obj["size"] = 1;
+					obj["mtime"] = cur_time;
+				}
+			}
+			data[ent.name] = obj;
+		}
+		respondContents(request.seq, data);
+	} else {
+		return;
+	}
+}
+
+function processRespond( respond ) {
+	if (respond.title === "diagnostics") {
+		if( Array.isArray(respond.diagnostics) ) {
+			diagnosticsProcesser(respond.diagnostics);
+		}
+	} else {
+		return;
+	}
+}
+
+function requestDiagnostics( targets : string[] = [] ) : number {
+	let pack = {
+		title: "diagnostics",
+		targets: targets
+	};
+	return sendRequest( pack );
+}
+
+function requestWorkspace( uri : string ) : number {
+	let pack = {
+		title: "workspace",
+		uri: uri
+	};
+	return sendRequest( pack );
+}
+
+function respondContent( seq : number, data : string ) {
+	let pack = {
+		title: "content",
+		status: 0,
+		data: data
+	};
+	sendRespond( seq, pack );
+}
+
+function respondContents( seq : number, data : object ) {
+	let pack = {
+		title: "contents",
+		status: 0,
+		data: data
+	};
+	sendRespond( seq, pack );
+}
+
+function respondFailure( request ) {
+	let pack = {
+		title: request.title,
+		status: 1
+	};
+	sendRespond(request.seq, pack );
+}
+
+let global_req = 1;
+function sendRequest( pack ) : number {
+	pack.action = "request";
+	pack.seq = global_req++;
+	sendPackage(pack);
+	return pack.seq;
+}
+
+function sendRespond( seq : number, pack ) {
+	pack.action = "respond";
+	pack.seq = seq;
+	sendPackage(pack);
+}
+
+function sendPackage( pack ) {
+	pack.timestamp = os.uptime();
+	let str = JSON.stringify(pack)+"\n";
+	compiler.stdin.write(str, (e)=>{});
+	// connection.console.log("Package sent to compiler: " + str );
+}
+
+let workspace_set = false;
+async function validateDocuments(change: TextDocumentChangeEvent) {
+	if( !workspace_set ) {
+		workspace_set = true;
+		let folders = await connection.workspace.getWorkspaceFolders();
+		requestWorkspace(folders[0].uri);
+	}
+	requestDiagnostics();
+}
+
+type CompilerDiagnostic = {
+	severity: DiagnosticSeverity,
+	prefix: string,
+	error_code: string,
+	message: string,
+	begin_line: number,
+	begin_column: number,
+	end_line: number,
+	end_column: number,
+	informations: CompilerDiagnostic[]
+};
+
+let diagnosticsMap : object = {};
+function diagnosticsProcesser(log: CompilerDiagnostic[] ) {
+
+	for( let key in diagnosticsMap ) { diagnosticsMap[key] = []; }
+
+	for( let element of log ) {
+		let diagnostics: Diagnostic[] = diagnosticsMap[element.prefix];
+		if (diagnostics === undefined) { diagnostics = diagnosticsMap[element.prefix] = []; }
+		let diagnostic: Diagnostic = {
+			severity: element.severity,
+			range: {
+				start: Position.create(element.begin_line - 1, element.begin_column - 1),
+				end: Position.create(element.end_line - 1, element.end_column - 1)
+			},
+			message: element.message,
+			source: 'alioth'
+		};
+
+		if (hasDiagnosticRelatedInformationCapability) {
+			diagnostic.relatedInformation = [];
+			for( let sub of element.informations) {
+				let subd = {
+					location: {
+						uri: path.resolve(sub.prefix),
+						range: {
+							start: Position.create(sub.begin_line - 1, sub.begin_column - 1),
+							end: Position.create(sub.end_line - 1, sub.end_column - 1)
+						}
+					},
+					message: sub.message
+				};
+				diagnostic.relatedInformation.push(subd);
+			}
+		}
+		diagnostics.push(diagnostic);
+	}
+
+	// Send the computed diagnostics to VSCode.
+	for (let key in diagnosticsMap) {
+		connection.sendDiagnostics({ uri: key, diagnostics: diagnosticsMap[key] });
+	}
+}
 
 // Make the text document manager listen on the connection
 // for open, change and close text document events
