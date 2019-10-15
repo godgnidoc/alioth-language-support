@@ -1,6 +1,8 @@
 # alioth-language-support
 
-![](https://dn-ezr.cn/assets/img/icon_with_text.png)
+![](https://dn-ezr.cn/res/img/icon_with_text.png)
+
+This extension provides language support to the Alioth programming language using the features provided by the compiler.
 
 This extension is under developing.
 
@@ -10,9 +12,16 @@ This extension is under developing.
 
   Maybe the worst color support, I'm trying to get it better.
 
+  ![](icon/color.png)
+
 - semantic check
   
-  this require you to have the Alioth compiler installed.
+  This extension setup communication between the Alioth compiler once it is started.
+  Each time the Alioth source code document is modified, the extension send a request to make the compiler run the diagnostic process. There's no need to wary about the cost when the request frequently sent to the compiler, the compiler caches all syntax trees affected, each time a request arrives, the compiler rescan the documents modified only.
+
+  ![](icon/diagnostic.png)
+
+  This function requires you to have the Alioth compiler installed, check the original [repository](https://github.com/dn-ezr/alioth-compiler) for more information.
 
 ## Requirements
 
@@ -24,7 +33,15 @@ Presently, we can only support the platform of linux, and you have to make sure 
 
 ## Extension Settings
 
-There's no need to configure this extension right now.
+- logCompilerPackage
+
+  This option is used to make the extension print all packages received from and sent to the compiler. It is developed for debug purpose and seems not working in the release mode.
+
+- workSpaceUri
+
+  This option is used to make the compiler focus on certain folder only, so that the extension can work properly even if the workspace uri doesn't point to the Alioth project root path.
+
+  Though this option is called `uri`, the string in uri format is not the only kind of value which is acceptable. Path strings are available too.
 
 ## Known Issues
 
@@ -32,13 +49,15 @@ There's no need to configure this extension right now.
   
   Limited by the ability of regular expression, the color support is not ready right now.
 
-- big cost
-  
-  When checking semantics, this extension runs the alioth compiler which is named 'aliothc' by now, this will cost a lot.
-
 ## Release Notes
 
 This is the first release.
+
+### 0.0.9
+
+Add more support to the Alioth protocol.
+
+- Fix bug where extension exits leave the compiler fall in infinite loop.
 
 ### 0.0.8
 

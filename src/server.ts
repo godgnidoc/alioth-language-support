@@ -69,6 +69,7 @@ connection.onInitialized(async () => {
 			DidChangeConfigurationNotification.type,
 			undefined
 		);
+		// getAliothSettings();
 	}
 	if (hasWorkspaceFolderCapability) {
 		connection.workspace.onDidChangeWorkspaceFolders(_event => {
@@ -79,51 +80,66 @@ connection.onInitialized(async () => {
 });
 
 // The example settings
-interface ExampleSettings {
-	maxNumberOfProblems: number;
+interface AliothConfiguration {
+	logCompilerPackage: boolean;
+	workSpaceUri: string;
 }
 
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
 // Please note that this is not the case when using this server with the client provided in this example
 // but could happen with other clients.
-const defaultSettings: ExampleSettings = { maxNumberOfProblems: 1000 };
-let globalSettings: ExampleSettings = defaultSettings;
-
-// Cache the settings of all open documents
-let documentSettings: Map<string, Thenable<ExampleSettings>> = new Map();
+const defaultSettings: AliothConfiguration = { logCompilerPackage: false, workSpaceUri: "./" };
+let globalSettings: AliothConfiguration = defaultSettings;
+let windowSetting : Thenable<AliothConfiguration> = undefined;
 
 connection.onDidChangeConfiguration(change => {
 	if (hasConfigurationCapability) {
-		// Reset all cached document settings
-		documentSettings.clear();
+		windowSetting = undefined;
+		getAliothSettings();
 	} else {
-		globalSettings = <ExampleSettings>(
-			(change.settings.languageServerExample || defaultSettings)
+		globalSettings = <AliothConfiguration>(
+			(change.settings.AliothLanguageServer || defaultSettings)
 		);
 	}
-
-	// Revalidate all open text documents
-	validateDocuments(null); // documents.all().forEach(validateTextDocument);
 });
 
-function getDocumentSettings(resource: string): Thenable<ExampleSettings> {
+connection.onShutdown(()=>{
+	if( compiler ) {
+		requestExit();
+		compiler = undefined;
+	}
+});
+
+connection.onExit(()=>{
+	if( compiler ) {
+		requestExit();
+		compiler = undefined;
+	}
+});
+
+
+async function getAliothSettings(): Promise<AliothConfiguration> {
 	if (!hasConfigurationCapability) {
-		return Promise.resolve(globalSettings);
+		return globalSettings;
 	}
-	let result = documentSettings.get(resource);
-	if (!result) {
-		result = connection.workspace.getConfiguration({
-			scopeUri: resource,
-			section: 'LanguageServerExample'
+	if (!windowSetting) {
+		windowSetting = connection.workspace.getConfiguration({
+			scopeUri: "window",
+			section: 'AliothLanguageServer'
 		});
-		documentSettings.set(resource, result);
+		windowSetting.then(( setting )=>{
+			if( setting.logCompilerPackage ) {
+				connection.console.info("Configuration: logCompilerPackage : true");
+			}
+			workspace_set = false;
+			validateDocuments(null);
+		});
 	}
-	return result;
+	return windowSetting;
 }
 
 // Only keep settings for open documents
 documents.onDidClose(e => {
-	documentSettings.delete(e.document.uri);
 });
 
 // The content of a text document has changed. This event is emitted
@@ -176,17 +192,23 @@ connection.onCompletionResolve(
 // the connection to the compiler
 let compiler : ChildProcess = undefined;
 function initializeCompiler() {
-	compiler = spawn("alioth", ["v:", "0", "---", "0/1"] );
+	compiler = spawn("alioth", ["v:", "1", "---", "0/1"] );
 	compiler.stdout.on("data", onCompilerOutput);
 	compiler.on("close", (code: number, signal: string) => {
-		connection.console.log("Compiler exited:("+code+"):"+signal);
+		connection.console.warn("Compiler exited:("+code+"):"+signal);
+		compiler = undefined;
 	});
-	connection.console.log("Compiler started in interactive mode");
+	connection.console.info("Compiler started in interactive mode");
 }
 
-function onCompilerOutput( message ) {
-	let msg = null;
-	try {
+async function onCompilerOutput( message : string ) {
+	let setting = await getAliothSettings();
+	message = message.toString().trimRight();
+	if( setting.logCompilerPackage ) {
+		connection.console.info("compiler package received: "+ message );
+	}
+
+	let msg = null; try {
 		msg = JSON.parse(message);
 		if (msg === null || typeof msg !== 'object') {return;}
 	} catch {return;}
@@ -243,6 +265,8 @@ function processRespond( respond ) {
 		if( Array.isArray(respond.diagnostics) ) {
 			diagnosticsProcesser(respond.diagnostics);
 		}
+	} else if( respond.title === "exception" ) {
+		connection.console.error("compiler exception: " + respond.msg);
 	} else {
 		return;
 	}
@@ -256,10 +280,26 @@ function requestDiagnostics( targets : string[] = [] ) : number {
 	return sendRequest( pack );
 }
 
-function requestWorkspace( uri : string ) : number {
+function requestWorkspace( uri_or_path : string ) : number {
+	let uri : URI = undefined;
+	let parsed = URI.parse(uri_or_path);
+	if( parsed && parsed.scheme.length > 0 ){
+		uri = parsed;
+	} else {
+		uri = URI.file(path.resolve(uri_or_path));
+	}
+	connection.console.info("Configuration: worksapace : " + uri.toString());
+
 	let pack = {
 		title: "workspace",
-		uri: uri
+		uri: uri.toString()
+	};
+	return sendRequest( pack );
+}
+
+function requestExit() : number {
+	let pack = {
+		title: "exit"
 	};
 	return sendRequest( pack );
 }
@@ -304,19 +344,26 @@ function sendRespond( seq : number, pack ) {
 	sendPackage(pack);
 }
 
-function sendPackage( pack ) {
+async function sendPackage( pack ) {
 	pack.timestamp = os.uptime();
-	let str = JSON.stringify(pack)+"\n";
-	compiler.stdin.write(str, (e)=>{});
-	// connection.console.log("Package sent to compiler: " + str );
+	let str = JSON.stringify(pack);
+	let setting = await getAliothSettings();
+	if( compiler ) {
+		compiler.stdin.write(str+"\n", (e)=>{});
+		if( setting.logCompilerPackage ) {
+			connection.console.info("compiler package sent: " + str );
+		}
+	} else {
+		connection.console.error("failed to send package to compiler: " + str );
+	}
 }
 
 let workspace_set = false;
 async function validateDocuments(change: TextDocumentChangeEvent) {
 	if( !workspace_set ) {
 		workspace_set = true;
-		let folders = await connection.workspace.getWorkspaceFolders();
-		requestWorkspace(folders[0].uri);
+		let setting = await getAliothSettings();
+		requestWorkspace( setting.workSpaceUri );
 	}
 	requestDiagnostics();
 }
@@ -341,32 +388,7 @@ function diagnosticsProcesser(log: CompilerDiagnostic[] ) {
 	for( let element of log ) {
 		let diagnostics: Diagnostic[] = diagnosticsMap[element.prefix];
 		if (diagnostics === undefined) { diagnostics = diagnosticsMap[element.prefix] = []; }
-		let diagnostic: Diagnostic = {
-			severity: element.severity,
-			range: {
-				start: Position.create(element.begin_line - 1, element.begin_column - 1),
-				end: Position.create(element.end_line - 1, element.end_column - 1)
-			},
-			message: element.message,
-			source: 'alioth'
-		};
-
-		if (hasDiagnosticRelatedInformationCapability) {
-			diagnostic.relatedInformation = [];
-			for( let sub of element.informations) {
-				let subd = {
-					location: {
-						uri: path.resolve(sub.prefix),
-						range: {
-							start: Position.create(sub.begin_line - 1, sub.begin_column - 1),
-							end: Position.create(sub.end_line - 1, sub.end_column - 1)
-						}
-					},
-					message: sub.message
-				};
-				diagnostic.relatedInformation.push(subd);
-			}
-		}
+		let diagnostic = translateDiagnostic(element);
 		diagnostics.push(diagnostic);
 	}
 
@@ -374,6 +396,44 @@ function diagnosticsProcesser(log: CompilerDiagnostic[] ) {
 	for (let key in diagnosticsMap) {
 		connection.sendDiagnostics({ uri: key, diagnostics: diagnosticsMap[key] });
 	}
+}
+
+function translateDiagnostic( diagnostic : CompilerDiagnostic ) : Diagnostic {
+	let d: Diagnostic = {
+		severity: diagnostic.severity,
+		range: {
+			start: Position.create(
+				(diagnostic.begin_line -= 1)<0?0:diagnostic.begin_line, 
+				(diagnostic.begin_column -= 1)<0?0:diagnostic.begin_column ),
+			end: Position.create(
+				(diagnostic.end_line -= 1)<0?0:diagnostic.end_line,
+				(diagnostic.end_column -= 1)<0?0:diagnostic.end_column )
+		},
+		message: diagnostic.message,
+		source: 'alioth'
+	};
+
+	if (hasDiagnosticRelatedInformationCapability) {
+		d.relatedInformation = [];
+		for( let sub of diagnostic.informations) {
+			let subd = {
+				location: {
+					uri: sub.prefix,
+					range: {
+						start: Position.create(
+							(sub.begin_line -= 1)<0?0:sub.begin_line, 
+							(sub.begin_column -= 1)<0?0:sub.begin_column),
+						end: Position.create(
+							(sub.end_line -= 1)<0?0:sub.end_line, 
+							(sub.end_column -= 1)<0?0:sub.end_column)
+					}
+				},
+				message: sub.message
+			};
+			d.relatedInformation.push(subd);
+		}
+	}
+	return d;
 }
 
 // Make the text document manager listen on the connection

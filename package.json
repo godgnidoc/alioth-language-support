@@ -55,13 +55,18 @@
         ],
         "configuration": {
             "type": "object",
-            "title": "Example configuration",
+            "title": "AliothConfiguration",
             "properties": {
-                "languageServerExample.maxNumberOfProblems": {
-                    "scope": "resource",
-                    "type": "number",
-                    "default": 100,
-                    "description": "Controls the maximum number of problems produced by the server."
+                "AliothLanguageServer.logCompilerPackage": {
+                    "scope": "window",
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Controls wether the language server will log the output of compiler"
+                }, "AliothLanguageServer.workSpaceUri": {
+                    "scope": "window",
+                    "type": "string",
+                    "default": "./",
+                    "description": "Override the workspace to make compiler focus on certain folder only"
                 }
             }
         }

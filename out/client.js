@@ -38,7 +38,7 @@ function activate(context) {
         synchronize: {
             // Notify the server about file changes to '.clientrc files contained in the workspace
             fileEvents: vscode.workspace.createFileSystemWatcher('**/.clientrc'),
-            configurationSection: 'languageServerExample'
+            configurationSection: 'AliothLanguageServer'
         }
     };
     // Create the language client and start the client.

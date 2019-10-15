@@ -53,6 +53,7 @@ connection.onInitialized(() => __awaiter(this, void 0, void 0, function* () {
     if (hasConfigurationCapability) {
         // Register for all configuration changes.
         connection.client.register(vscode_languageserver_1.DidChangeConfigurationNotification.type, undefined);
+        // getAliothSettings();
     }
     if (hasWorkspaceFolderCapability) {
         connection.workspace.onDidChangeWorkspaceFolders(_event => {
@@ -64,38 +65,53 @@ connection.onInitialized(() => __awaiter(this, void 0, void 0, function* () {
 // The global settings, used when the `workspace/configuration` request is not supported by the client.
 // Please note that this is not the case when using this server with the client provided in this example
 // but could happen with other clients.
-const defaultSettings = { maxNumberOfProblems: 1000 };
+const defaultSettings = { logCompilerPackage: false, workSpaceUri: "./" };
 let globalSettings = defaultSettings;
-// Cache the settings of all open documents
-let documentSettings = new Map();
+let windowSetting = undefined;
 connection.onDidChangeConfiguration(change => {
     if (hasConfigurationCapability) {
-        // Reset all cached document settings
-        documentSettings.clear();
+        windowSetting = undefined;
+        getAliothSettings();
     }
     else {
-        globalSettings = ((change.settings.languageServerExample || defaultSettings));
+        globalSettings = ((change.settings.AliothLanguageServer || defaultSettings));
     }
-    // Revalidate all open text documents
-    validateDocuments(null); // documents.all().forEach(validateTextDocument);
 });
-function getDocumentSettings(resource) {
-    if (!hasConfigurationCapability) {
-        return Promise.resolve(globalSettings);
+connection.onShutdown(() => {
+    if (compiler) {
+        requestExit();
+        compiler = undefined;
     }
-    let result = documentSettings.get(resource);
-    if (!result) {
-        result = connection.workspace.getConfiguration({
-            scopeUri: resource,
-            section: 'LanguageServerExample'
-        });
-        documentSettings.set(resource, result);
+});
+connection.onExit(() => {
+    if (compiler) {
+        requestExit();
+        compiler = undefined;
     }
-    return result;
+});
+function getAliothSettings() {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (!hasConfigurationCapability) {
+            return globalSettings;
+        }
+        if (!windowSetting) {
+            windowSetting = connection.workspace.getConfiguration({
+                scopeUri: "window",
+                section: 'AliothLanguageServer'
+            });
+            windowSetting.then((setting) => {
+                if (setting.logCompilerPackage) {
+                    connection.console.info("Configuration: logCompilerPackage : true");
+                }
+                workspace_set = false;
+                validateDocuments(null);
+            });
+        }
+        return windowSetting;
+    });
 }
 // Only keep settings for open documents
 documents.onDidClose(e => {
-    documentSettings.delete(e.document.uri);
 });
 // The content of a text document has changed. This event is emitted
 // when the text document first opened or when its content has changed.
@@ -140,30 +156,38 @@ connection.onCompletionResolve((item) => {
 // the connection to the compiler
 let compiler = undefined;
 function initializeCompiler() {
-    compiler = child_process_1.spawn("alioth", ["v:", "0", "---", "0/1"]);
+    compiler = child_process_1.spawn("alioth", ["v:", "1", "---", "0/1"]);
     compiler.stdout.on("data", onCompilerOutput);
     compiler.on("close", (code, signal) => {
-        connection.console.log("Compiler exited:(" + code + "):" + signal);
+        connection.console.warn("Compiler exited:(" + code + "):" + signal);
+        compiler = undefined;
     });
-    connection.console.log("Compiler started in interactive mode");
+    connection.console.info("Compiler started in interactive mode");
 }
 function onCompilerOutput(message) {
-    let msg = null;
-    try {
-        msg = JSON.parse(message);
-        if (msg === null || typeof msg !== 'object') {
+    return __awaiter(this, void 0, void 0, function* () {
+        let setting = yield getAliothSettings();
+        message = message.toString().trimRight();
+        if (setting.logCompilerPackage) {
+            connection.console.info("compiler package received: " + message);
+        }
+        let msg = null;
+        try {
+            msg = JSON.parse(message);
+            if (msg === null || typeof msg !== 'object') {
+                return;
+            }
+        }
+        catch (_a) {
             return;
         }
-    }
-    catch (_a) {
-        return;
-    }
-    if (msg.action === "request") {
-        processRequest(msg);
-    }
-    else if (msg.action === "respond") {
-        processRespond(msg);
-    }
+        if (msg.action === "request") {
+            processRequest(msg);
+        }
+        else if (msg.action === "respond") {
+            processRespond(msg);
+        }
+    });
 }
 function processRequest(request) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -217,6 +241,9 @@ function processRespond(respond) {
             diagnosticsProcesser(respond.diagnostics);
         }
     }
+    else if (respond.title === "exception") {
+        connection.console.error("compiler exception: " + respond.msg);
+    }
     else {
         return;
     }
@@ -228,10 +255,25 @@ function requestDiagnostics(targets = []) {
     };
     return sendRequest(pack);
 }
-function requestWorkspace(uri) {
+function requestWorkspace(uri_or_path) {
+    let uri = undefined;
+    let parsed = vscode_uri_1.default.parse(uri_or_path);
+    if (parsed && parsed.scheme.length > 0) {
+        uri = parsed;
+    }
+    else {
+        uri = vscode_uri_1.default.file(path.resolve(uri_or_path));
+    }
+    connection.console.info("Configuration: worksapace : " + uri.toString());
     let pack = {
         title: "workspace",
-        uri: uri
+        uri: uri.toString()
+    };
+    return sendRequest(pack);
+}
+function requestExit() {
+    let pack = {
+        title: "exit"
     };
     return sendRequest(pack);
 }
@@ -271,18 +313,28 @@ function sendRespond(seq, pack) {
     sendPackage(pack);
 }
 function sendPackage(pack) {
-    pack.timestamp = os.uptime();
-    let str = JSON.stringify(pack) + "\n";
-    compiler.stdin.write(str, (e) => { });
-    // connection.console.log("Package sent to compiler: " + str );
+    return __awaiter(this, void 0, void 0, function* () {
+        pack.timestamp = os.uptime();
+        let str = JSON.stringify(pack);
+        let setting = yield getAliothSettings();
+        if (compiler) {
+            compiler.stdin.write(str + "\n", (e) => { });
+            if (setting.logCompilerPackage) {
+                connection.console.info("compiler package sent: " + str);
+            }
+        }
+        else {
+            connection.console.error("failed to send package to compiler: " + str);
+        }
+    });
 }
 let workspace_set = false;
 function validateDocuments(change) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!workspace_set) {
             workspace_set = true;
-            let folders = yield connection.workspace.getWorkspaceFolders();
-            requestWorkspace(folders[0].uri);
+            let setting = yield getAliothSettings();
+            requestWorkspace(setting.workSpaceUri);
         }
         requestDiagnostics();
     });
@@ -297,37 +349,41 @@ function diagnosticsProcesser(log) {
         if (diagnostics === undefined) {
             diagnostics = diagnosticsMap[element.prefix] = [];
         }
-        let diagnostic = {
-            severity: element.severity,
-            range: {
-                start: vscode_languageserver_1.Position.create(element.begin_line - 1, element.begin_column - 1),
-                end: vscode_languageserver_1.Position.create(element.end_line - 1, element.end_column - 1)
-            },
-            message: element.message,
-            source: 'alioth'
-        };
-        if (hasDiagnosticRelatedInformationCapability) {
-            diagnostic.relatedInformation = [];
-            for (let sub of element.informations) {
-                let subd = {
-                    location: {
-                        uri: path.resolve(sub.prefix),
-                        range: {
-                            start: vscode_languageserver_1.Position.create(sub.begin_line - 1, sub.begin_column - 1),
-                            end: vscode_languageserver_1.Position.create(sub.end_line - 1, sub.end_column - 1)
-                        }
-                    },
-                    message: sub.message
-                };
-                diagnostic.relatedInformation.push(subd);
-            }
-        }
+        let diagnostic = translateDiagnostic(element);
         diagnostics.push(diagnostic);
     }
     // Send the computed diagnostics to VSCode.
     for (let key in diagnosticsMap) {
         connection.sendDiagnostics({ uri: key, diagnostics: diagnosticsMap[key] });
     }
+}
+function translateDiagnostic(diagnostic) {
+    let d = {
+        severity: diagnostic.severity,
+        range: {
+            start: vscode_languageserver_1.Position.create((diagnostic.begin_line -= 1) < 0 ? 0 : diagnostic.begin_line, (diagnostic.begin_column -= 1) < 0 ? 0 : diagnostic.begin_column),
+            end: vscode_languageserver_1.Position.create((diagnostic.end_line -= 1) < 0 ? 0 : diagnostic.end_line, (diagnostic.end_column -= 1) < 0 ? 0 : diagnostic.end_column)
+        },
+        message: diagnostic.message,
+        source: 'alioth'
+    };
+    if (hasDiagnosticRelatedInformationCapability) {
+        d.relatedInformation = [];
+        for (let sub of diagnostic.informations) {
+            let subd = {
+                location: {
+                    uri: sub.prefix,
+                    range: {
+                        start: vscode_languageserver_1.Position.create((sub.begin_line -= 1) < 0 ? 0 : sub.begin_line, (sub.begin_column -= 1) < 0 ? 0 : sub.begin_column),
+                        end: vscode_languageserver_1.Position.create((sub.end_line -= 1) < 0 ? 0 : sub.end_line, (sub.end_column -= 1) < 0 ? 0 : sub.end_column)
+                    }
+                },
+                message: sub.message
+            };
+            d.relatedInformation.push(subd);
+        }
+    }
+    return d;
 }
 // Make the text document manager listen on the connection
 // for open, change and close text document events
